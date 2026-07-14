@@ -4,7 +4,7 @@ from django.db import connection
 from .models import Customer, Order, OrderItem
 
 
-@modify_settings(MIDDLEWARE={'remove': ['silk.middleware.SilkyMiddleware']})
+@modify_settings(MIDDLEWARE={'remove': ['silk.middleware.SilkyMiddleware', 'tenants.middleware.TenantMiddleware']})
 class OrderSummaryQueryCountTest(TestCase):
     def setUp(self):
         self.customer = Customer.objects.create(name="Test", email="t@test.com")

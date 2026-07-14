@@ -173,7 +173,21 @@ a known limitation.
 
 ## Section 3 — Multi-Tenant Data Isolation
 
-*(To be completed.)*
+### Why I used `contextvars` instead of `threading.local()`
+
+The assessment allows implementing tenant scoping using either thread-local storage or request middleware. I chose to store the current tenant in a `contextvars.ContextVar` while still binding and clearing it from middleware during the request lifecycle.
+
+Although `threading.local()` works correctly for traditional synchronous WSGI applications (where one request is typically handled by one thread), it is not safe once Django runs under ASGI with asynchronous views.
+
+The problem is that async Django does **not** guarantee one request per thread. A single worker thread may interleave multiple coroutines while each is suspended at an `await` point. Since `threading.local()` stores data per **thread** rather than per **coroutine**, two concurrent requests executing on the same thread can accidentally observe or overwrite each other's tenant context, potentially causing cross-tenant data leakage.
+
+`contextvars.ContextVar` solves this by storing state in the execution context of each coroutine instead of the underlying operating system thread. Every async task receives its own isolated context, and Django/ASGI correctly preserves that context across `await` boundaries. As a result, concurrent requests running on the same thread still maintain completely independent tenant values.
+
+In this implementation, the middleware resolves the tenant from the `X-Tenant-ID` request header and stores it in the `ContextVar` before the request reaches the view. The custom `TenantManager` automatically reads the current tenant from this context and scopes every queryset by applying `.filter(tenant=current_tenant)`. This means even a simple call such as `Order.objects.all()` is automatically restricted to the active tenant without requiring developers to remember to add tenant filters manually.
+
+Finally, the middleware resets the `ContextVar` inside a `finally` block after the response is returned. This cleanup step is important because application worker threads are reused across requests; resetting the context guarantees that tenant information from one request cannot leak into the next request.
+
+Using `contextvars` makes the automatic ORM-level tenant isolation safe for both synchronous and asynchronous Django applications while preserving complete isolation between concurrent requests.
 
 ## Section 4 — Written Architecture Review
 

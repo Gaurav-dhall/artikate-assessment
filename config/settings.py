@@ -41,10 +41,12 @@ INSTALLED_APPS = [
     'orders',
     'silk',
     'jobs',
+    'tenants',
 ]
 
 MIDDLEWARE = [
     'silk.middleware.SilkyMiddleware',
+    'tenants.middleware.TenantMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
