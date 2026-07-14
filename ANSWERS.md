@@ -121,9 +121,55 @@ Supporting automated evidence: `orders/tests.py::OrderSummaryQueryCountTest` ass
 
 ---
 
-## Section 2 — Design a Rate-Limited Async Job Queue
+## Section 2 — Rate-Limited Async Job Queue
 
-*(To be completed — see `DESIGN.md` for architecture decisions.)*
+### What happens to in-flight tasks if the Celery worker is SIGKILL'd?
+
+When a Celery worker process receives SIGKILL, it dies immediately —
+there is no graceful shutdown, no chance to run cleanup code, and no
+opportunity for the task to finish. The question is whether the task
+that was running at that moment is lost, retried, or duplicated.
+
+The answer depends entirely on three specific Celery configuration
+settings, all of which are explicitly set in this implementation:
+
+**`acks_late=True` (set on the task decorator)**
+By default, Celery acknowledges a task to the broker the moment the
+worker *receives* it — before execution begins. This means if the worker
+is SIGKILL'd mid-task, the broker already considers the task "done" and
+will not redeliver it. The task is permanently lost.
+
+`acks_late=True` reverses this: acknowledgement is deferred until after
+the task *completes successfully*. If the worker is killed before
+completion, the broker never receives the acknowledgement, detects the
+worker is gone (via heartbeat timeout), and redelivers the task to
+another available worker. This is the primary crash-safety guarantee.
+
+**`CELERY_TASK_REJECT_ON_WORKER_LOST = True` (set in settings.py)**
+When a worker process dies unexpectedly, Celery needs to decide what
+to do with its unacknowledged tasks. Without this setting, the task
+may be marked as failed rather than requeued. With this setting, Celery
+explicitly rejects the task back to the broker, ensuring it enters the
+retry cycle rather than silently entering a failed state.
+
+**`CELERY_WORKER_PREFETCH_MULTIPLIER = 1` (set in settings.py)**
+By default, Celery workers prefetch multiple tasks — pulling several
+from the broker at once to reduce network round-trips. If a worker
+holding 10 prefetched tasks is SIGKILL'd, all 10 are redelivered
+simultaneously, causing a burst. With prefetch set to 1, each worker
+holds at most one unacknowledged task at a time. A SIGKILL affects
+exactly one task, not a batch — critical for a rate-limited system
+where redelivery bursts would immediately saturate the rate limiter.
+
+**One honest limitation:** `acks_late=True` enables at-least-once
+delivery, not exactly-once. A task that completes successfully but
+whose acknowledgement is lost (e.g. Redis connection drops in the
+250ms window between task completion and ACK) will be redelivered and
+executed again. For transactional emails, this means a user could
+receive a duplicate. In production, idempotency keys (storing a hash
+of task arguments and checking before sending) would close this gap.
+This implementation does not include that, and it is worth naming as
+a known limitation.
 
 ## Section 3 — Multi-Tenant Data Isolation
 
