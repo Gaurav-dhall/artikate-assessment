@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'orders',
     'silk',
+    'jobs',
 ]
 
 MIDDLEWARE = [
@@ -101,6 +102,19 @@ AUTH_PASSWORD_VALIDATORS = [
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
 ]
+
+
+# Celery
+CELERY_BROKER_URL = 'redis://localhost:6379/0'
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+CELERY_TASK_TRACK_STARTED = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
+
+# Email (console backend — prints email to terminal instead of actually sending,
+# since we don't have real SMTP credentials for this assessment)
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+DEFAULT_FROM_EMAIL = 'noreply@artikate.test'
 
 
 # Internationalization
